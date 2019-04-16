@@ -1,0 +1,184 @@
+:-dynamic piedra/3.
+:-dynamic puntaje/2.
+:-dynamic invalida/2.
+:-dynamic pasa/1.
+
+%una posicion es valida si esta dentro del
+%tablero, esta libre y no se encuentra invalidada
+posicionValida(X,Y):-enRango(X,Y),libre(X,Y),not(invalida(X,Y)).
+
+%una posicino esta en rango si se encuentra
+%dentro de los limites del tablero
+enRango(X,Y):-X>=1,X=<19,Y>=1,Y=<19.
+
+%almacena el puntaje de cada jugador
+%inicialmente el puntaje de ambos es 0
+puntaje(b,0).
+puntaje(n,0).
+
+%el juego termina cuando ambos jugadores pasan
+finJuego:-pasa(b),pasa(n).
+
+%agrega el hecho de que el jugador que juega
+%con el color Color ha pasado
+pasaJugador(Color):-assert(pasa(Color)).
+
+%incrementa el puntaje del jugador correspondiente
+%en P puntos
+incrementarPuntaje(Color,Puntos):-puntaje(Color,P),retract(puntaje(Color,P)),Paux is Puntos+P,assert(puntaje(Color,Paux)).
+
+%coloca una ficha de color Color en la posicion (X,Y)
+%si es posible, y devuelve una lista con las fichas
+%del color contrario que fueron capturadas
+colocarFicha(Color,X,Y,Atrapadas):-posicionValida(X,Y),assertB(piedra(Color,X,Y)),noHaySuicidio(Color,X,Y,Xinv,Yinv),atraparFichas(Color,Atrapadas),longitud(Atrapadas,L),actualizarInvalidas(Xinv,Yinv,L).
+
+%captura todas las fichas del color contrario
+%a Color, las elimina e incrementa el puntaje del
+%jugador correspondiente
+atraparFichas(Color,Atrapadas):-findall((X,Y),atrapaFicha(Color,X,Y,[]),Atrapadas),longitud(Atrapadas,Puntos),eliminarFichas(Atrapadas),incrementarPuntaje(Color,Puntos).
+
+%elimina las fichas del tablero que se encuentran
+%en la lista recibida
+eliminarFichas([]).
+eliminarFichas([(X,Y)|T]):-retract(piedra(_,X,Y)),eliminarFichas(T).
+
+%una posicion esta libre si no hay ninguna
+%piedra en dicha posicion
+libre(X,Y):-not(piedra(_,X,Y)).
+
+%una posicion fuera de rango es aquella que
+%se encuentra fuera del tablero
+fueraDeRango(0,_).
+fueraDeRango(20,_).
+fueraDeRango(_,0).
+fueraDeRango(_,20).
+
+%reiniciar elimina todas las piedras del tablero,
+%resetea los puntajes y elimina el hecho de que algun
+%jugador haya pasado, si lo hay.
+reiniciar:-findall((X,Y),piedra(_,X,Y),Piedras),eliminarFichas(Piedras),retract(puntaje(b,_)),retract(puntaje(n,_)),assert(puntaje(b,0)),assert(puntaje(n,0)),borrarPasadas.
+
+%elimina el hecho de que algun jugador alla
+%pasado alguna vez
+borrarPasadas:-pasa(b),retract(pasa(b)).
+borrarPasadas:-pasa(a),retract(pasa(a)).
+borrarPasadas.
+
+%si se produjo la jugada eternity, se debe invalidar
+%la posicion de la ficha capturada, si no se produjo
+%dicha situacion y hay alguna posicion invalida, luego
+%de insertar en otro lugar dicha posicion vuelve a ser
+%valida
+actualizarInvalidas(X,Y,_L):-X=0,Y=0,invalida(A,B),retract(invalida(A,B)).
+actualizarInvalidas(X,Y,_L):-X=0,Y=0.
+actualizarInvalidas(X,Y,1):-invalida(A,B),retract(invalida(A,B)),assert(invalida(X,Y)).
+actualizarInvalidas(_X,_Y,L):-invalida(A,B),L\=1,retract(invalida(A,B)).
+actualizarInvalidas(X,Y,1):-assert(invalida(X,Y)).
+actualizarInvalidas(_X,_Y,L):-L\=1.
+
+%determina la longitud de la lista recibida
+longitud([],0).
+longitud([_|T],L):-longitud(T,X),L is X+1.
+
+%devuelve el color contrario al recibido
+colorContrario(b,n).
+colorContrario(n,b).
+
+%la primer solucion agrega el hecho X, si se piden
+%soluciones alternativas elimina el hecho X agregado
+%en la primer solucion y falla, se utiliza a la hora
+%de colocar una ficha en caso de que se quiera hacer
+%en una posicion indebida
+assertB(X):-assert(X).
+assertB(X):-retract(X),fail.
+
+%en una posicion no hay suicidio si la ficha no se encuentra atrapada,
+%o si en caso de estar atrapada captura alguna ficha del color
+%contrario en una posicion adyacente
+noHaySuicidio(Color,X,Y,0,0):-noHaySuicidioAux(Color,X,Y,[]).
+noHaySuicidio(Color,X,Y,X1,Y):-X1 is X-1,atrapaFicha(Color,X1,Y,[]).
+noHaySuicidio(Color,X,Y,X1,Y):-X1 is X+1,atrapaFicha(Color,X1,Y,[]).
+noHaySuicidio(Color,X,Y,X,Y1):-Y1 is Y-1,atrapaFicha(Color,X,Y1,[]).
+noHaySuicidio(Color,X,Y,X,Y1):-Y1 is Y+1,atrapaFicha(Color,X,Y1,[]).
+
+%no hay suicidio en una posicion si la ficha no se encuentra rodeada,
+%con que haya un lugar adyacente que este libre o haya otra ficha
+%del mismo color y tampoco este rodeada alcanza
+noHaySuicidioAux(Color,X,Y,Visitados):-X1 is X-1,enRango(X1,Y),(libre(X1,Y);(piedra(Color,X1,Y),noVisitada(X1,Y,Visitados),noHaySuicidioAux(Color,X1,Y,[piedra(Color,X,Y)|Visitados]))).
+noHaySuicidioAux(Color,X,Y,Visitados):-X1 is X+1,enRango(X1,Y),(libre(X1,Y);(piedra(Color,X1,Y),noVisitada(X1,Y,Visitados),noHaySuicidioAux(Color,X1,Y,[piedra(Color,X,Y)|Visitados]))).
+noHaySuicidioAux(Color,X,Y,Visitados):-Y1 is Y-1,enRango(X,Y1),(libre(X,Y1);(piedra(Color,X,Y1),noVisitada(X,Y1,Visitados),noHaySuicidioAux(Color,X,Y1,[piedra(Color,X,Y)|Visitados]))).
+noHaySuicidioAux(Color,X,Y,Visitados):-Y1 is Y+1,enRango(X,Y1),(libre(X,Y1);(piedra(Color,X,Y1),noVisitada(X,Y1,Visitados),noHaySuicidioAux(Color,X,Y1,[piedra(Color,X,Y)|Visitados]))).
+
+%determina si la ficha en la posicion (X,Y) fue visitada
+visitada(X,Y,[piedra(_,X,Y)|_]).
+visitada(X,Y,[H|T]):-H\=piedra(_,X,Y),visitada(X,Y,T).
+
+%determina si la ficha en la posicion (X,Y) no fue visitada
+noVisitada(_X,_Y,[]).
+noVisitada(X,Y,[H|T]):-H\=piedra(_,X,Y),noVisitada(X,Y,T).
+
+%una ficha color Contrario en la posicion (X,Y) esta atrapada si
+%en todas las adyacencias se da que:
+% esta el borde del tablero,
+% es una ficha de color Color
+%hay una ficha de color Contrario que no fue visitada y esta atrapada
+%hay una ficha de color Contrario que ya fue visitada
+atrapaFicha(Color,X,Y,Visitados):-colorContrario(Color,Contrario),piedra(Contrario,X,Y),VisitadosAux=[piedra(Contrario,X,Y)|Visitados],X1 is X-1,flancoOcupado(Color,X1,Y,VisitadosAux),X2 is X+1,flancoOcupado(Color,X2,Y,VisitadosAux),Y1 is Y-1,flancoOcupado(Color,X,Y1,VisitadosAux),Y2 is Y+1,flancoOcupado(Color,X,Y2,VisitadosAux).
+
+%una posicion adyacente esta ocupada si hay una piedra de color
+%Color, se encuentra el borde del tablero, hay una ficha de
+%color Contrario que no fue visitada y esta atrapada o
+%hay una ficha de color Contrario que ya fue visitada
+flancoOcupado(Color,X,Y,_):-piedra(Color,X,Y).
+flancoOcupado(_,X,Y,_):-fueraDeRango(X,Y).
+flancoOcupado(Color,X,Y,Visitados):-colorContrario(Color,Contrario),piedra(Contrario,X,Y),noVisitada(X,Y,Visitados),atrapaFicha(Color,X,Y,Visitados).
+flancoOcupado(Color,X,Y,Visitados):-colorContrario(Color,Contrario),piedra(Contrario,X,Y),visitada(X,Y,Visitados).
+
+fichaComputadora(X,Y,Atrapadas):-generarPosicion(1,1,X,Y),assertB(piedra(n,X,Y)),atraparPropias(n,PropiasAtrapadas),longitud(PropiasAtrapadas,L),L>0,retract(piedra(n,X,Y)),assertB(piedra(b,X,Y)),noHaySuicidio(b,X,Y,Xinv,Yinv),atraparFichas(b,Atrapadas),longitud(Atrapadas,L2),actualizarInvalidas(Xinv,Yinv,L2).
+
+fichaComputadora(X,Y,Atrapadas):-generarPosicion(1,1,X,Y),assertB(piedra(b,X,Y)),noHaySuicidio(b,X,Y,Xinv,Yinv),atraparFichas(b,Atrapadas),longitud(Atrapadas,L),L>0,actualizarInvalidas(Xinv,Yinv,L).
+fichaComputadora(X,Y,[]):-generarPosicion(1,1,X,Y),assertB(piedra(b,X,Y)),noHaySuicidio(b,X,Y,_,_),contrariaParcialmenteCubierta(b,X,Y,Xcub,Ycub),cubre(b,X,Y,Xcub,Ycub),actualizarInvalidas(0,0,_).
+fichaComputadora(X,Y,[]):-generarPosicion(1,1,X,Y),assertB(piedra(b,X,Y)),noHaySuicidio(b,X,Y,_,_),cubreAdyacente(b,X,Y),actualizarInvalidas(0,0,_).
+% fichaComputadora(X,Y,[]):-generarPosicion(1,1,X,Y),assertB(piedra(b,X,Y)),piedraParcCubierta(b,X,Y),noHaySuicidio(b,X,Y,Xinv,Yinv),%actualizarInvalidas(Xinv,Yinv,2).
+% fichaComputadora(X,Y,[]):-generarPosicion(1,1,X,Y),assertB(piedra(b,X,Y)),cubreAdyacente(b,X,Y),noHaySuicidio(b,X,Y,Xinv,Yinv),actu%alizarInvalidas(Xinv,Yinv,2).
+%
+
+atraparPropias(Color,Atrapadas):-findall((X,Y),atrapaFicha(Color,X,Y,[]),Atrapadas).
+
+
+generarPosicion(X,Y,X,Y):-posicionValida(X,Y).
+generarPosicion(X,Y,PosX,PosY):-X<19,Y=<19,X1 is X+1,generarPosicion(X1,Y,PosX,PosY).
+generarPosicion(X,Y,PosX,PosY):-X=19,Y<19,Y1 is Y+1,generarPosicion(1,Y1,PosX,PosY).
+
+cubreAdyacente(Color,X,Y):-colorContrario(Color,Contrario),X1 is X-1,piedra(Contrario,X1,Y).
+cubreAdyacente(Color,X,Y):-colorContrario(Color,Contrario),X1 is X+1,piedra(Contrario,X1,Y).
+cubreAdyacente(Color,X,Y):-colorContrario(Color,Contrario),Y1 is Y-1,piedra(Contrario,X,Y1).
+cubreAdyacente(Color,X,Y):-colorContrario(Color,Contrario),Y1 is Y+1,piedra(Contrario,X,Y1).
+
+piedraParcialmenteCubiertaAdyacente(Color,X,Y):-X1 is X-1,cubreAdyacente(Color,X1,Y).
+piedraParcialmenteCubiertaAdyacente(Color,X,Y):-X1 is X+1,cubreAdyacente(Color,X1,Y).
+piedraParcialmenteCubiertaAdyacente(Color,X,Y):-Y1 is Y-1,cubreAdyacente(Color,X,Y1).
+piedraParcialmenteCubiertaAdyacente(Color,X,Y):-Y1 is Y+1,cubreAdyacente(Color,X,Y1).
+
+piedraParcCubierta(Color,X,Y):-colorContrario(Color,Contrario),piedra(Contrario,X1,Y1),cubreAdyacente(Contrario,X1,Y1),X\=X1,Y\=Y1.
+
+contrariaParcialmenteCubierta(Color,X,Y,Xcub,Ycub):-colorContrario(Color,Contrario),piedra(Contrario,Xcub,Ycub),adyacenteContrario(Color,X,Y,Xcub,Ycub).
+
+adyacenteContrario(Color,X,Y,A,B):-X1 is A-1,((X1\=X);(Y\=B)),piedra(Color,X1,B).
+adyacenteContrario(Color,X,Y,A,B):-X1 is A+1,((X1\=X);(Y\=B)),piedra(Color,X1,B).
+adyacenteContrario(Color,X,Y,A,B):-Y1 is B-1,((A\=X);(Y1\=Y)),piedra(Color,A,Y1).
+adyacenteContrario(Color,X,Y,A,B):-Y1 is B+1,((A\=X);(Y1\=Y)),piedra(Color,A,Y1).
+
+cubre(_,X,Y,Xcub,Ycub):-X1 is Xcub-1,X=X1,Y=Ycub.
+cubre(_,X,Y,Xcub,Ycub):-X1 is Xcub+1,X=X1,Y=Ycub.
+cubre(_,X,Y,Xcub,Ycub):-Y1 is Ycub-1,X=Xcub,Y1=Y.
+cubre(_,X,Y,Xcub,Ycub):-Y1 is Ycub+1,X=Xcub,Y1=Y.
+
+
+
+
+
+
+
+
+
